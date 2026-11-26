@@ -128,7 +128,9 @@ def make_handler(app):
                     return self._send(401, {"error": "auth", "pin_required": True})
                 return self._send(200, {"devices": app.scanner.device_list(), "scan": app.scanner.progress,
                                         "meta": app.scanner.meta, "demo": bool(app.demo),
-                                        "location": app.store.get("settings", "location")})
+                                        "location": app.store.get("settings", "location"),
+                                        "location_name": app.store.get("settings", "location_name"),
+                                        "home_name": app.store.get("settings", "home_name")})
             m = re.match(r"^/api/devices/([^/]+)/controls$", path)
             if m:
                 if not self._authed():
@@ -184,6 +186,19 @@ def make_handler(app):
 
             if not self._authed():
                 return self._send(401, {"error": "auth"})
+
+            if path == "/api/settings":
+                if "location" in body:
+                    loc = body.get("location")
+                    try:
+                        loc = [round(float(loc[0]), 3), round(float(loc[1]), 3)] if loc else None
+                    except (TypeError, ValueError, IndexError):
+                        return self._send(400, {"error": "Neplatná poloha"})
+                    app.store.put("settings", "location", loc)
+                    app.store.put("settings", "location_name", str(body.get("location_name") or "")[:60] if loc else None)
+                if "home_name" in body:
+                    app.store.put("settings", "home_name", str(body.get("home_name") or "").strip()[:40] or None)
+                return self._send(200, {"ok": True})
 
             if path == "/api/scan":
                 subnet = body.get("subnet") or None

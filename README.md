@@ -74,6 +74,19 @@ Na adrese **`http://<IP počítača>:8765/tv`** je celoobrazovkové prostredie p
 - **Počasie**: spusti raz program s polohou, napríklad `python3 netdash.py --location 48.15,17.11`. Súradnice svojho mesta nájdeš na mapy.cz pravým klikom → „Co je zde?“. Poloha sa zapamätá.
 - Program musí bežať na počítači v tej istej sieti. Na nonstop použitie sa hodí Raspberry Pi.
 
+## Vzhľad a stránky
+
+- **Domov** – karty zariadení podľa typu:
+  - svetlá s veľkým posuvníkom jasu a predvoľbami Teplá/Jemná/Studená,
+  - zásuvky, prehrávače a TV, žalúzie, termostat a scény,
+  - počasie a prehľad.
+- **Energia** – aktuálny príkon, denná spotreba, najväčší spotrebič a graf za 24 h. Graf sa plní, kým je dashboard otvorený.
+- **Upozornenia** – nové zariadenia v sieti, nedostupné a nereagujúce zariadenia.
+- **Sieť** – všetky nájdené zariadenia s detailmi, premenovaním a Wake-on-LAN.
+- **Nastavenia** – téma (svetlá/tmavá/podľa systému), 5 farebných paliet, vlastný akcent, odtieň skla, zaoblenie, hustota a mesto pre počasie, s náhľadom.
+
+![Energia](docs/energia.png)
+
 ## Ďalšie funkcie
 
 - **Premenovanie** zariadení (ikonka ceruzky alebo dvojklik na názov). Meno ostane uložené podľa MAC adresy.
@@ -85,7 +98,7 @@ Na adrese **`http://<IP počítača>:8765/tv`** je celoobrazovkové prostredie p
 
 - Prístup z iných zariadení je chránený **PIN-om** (po 5 zlých pokusoch blokovanie na 5 minút) a dashboard má ochranu proti CSRF a DNS rebindingu.
 - Prihlásenie z mobilu, tokeny a párovacie kľúče sa ukladajú do `netdash_data.json` vedľa programu. Súbor **nikomu neposielaj**.
-- Program komunikuje len so zariadeniami vo tvojej sieti a nič neposiela na internet.
+- Program komunikuje len so zariadeniami vo tvojej sieti. Na internet ide iba prehliadač, a to po písmo (Google Fonts) a po počasie a vyhľadanie mesta (Open-Meteo, len súradnice mesta). O tvojich zariadeniach nič neodchádza.
 - Skenuj len sieť, ktorá je tvoja.
 
 ## Riešenie problémov
