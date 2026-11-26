@@ -16,6 +16,7 @@ _RAW = [
     ("192.168.1.24", "ec:b5:fa:00:00:24", "Hue Bridge", "Philips Hue", "BSB002", [80, 443], ["_hue._tcp"], {}, "hue"),
     ("192.168.1.25", "04:cf:8c:00:00:25", "Lampa pri posteli", "Yeelight", "Yeelight color4", [55443], [], {}, "yeelight"),
     ("192.168.1.30", "64:e4:a5:00:00:30", "LG OLED obývačka", "LG", "OLED55C3", [3000, 3001, 1900], ["_airplay._tcp"], {}, "lgwebos"),
+    ("192.168.1.33", "70:af:24:00:00:33", "Philips TV obývačka", "Philips", "55PUS8507/12", [1925, 1926], [], {}, "philips"),
     ("192.168.1.31", "48:a6:b8:00:00:31", "Sonos Kuchyňa", "Sonos, Inc.", "Sonos One", [1400], ["_sonos._tcp", "_spotify-connect._tcp"], {}, "upnp"),
     ("192.168.1.32", "f4:f5:d8:00:00:32", "Chromecast spálňa", "Google", "Chromecast", [8008, 8009], ["_googlecast._tcp"], {}),
     ("192.168.1.40", "b8:27:eb:00:00:40", "Home Assistant", "Home Assistant", "Home Assistant", [22, 8123], ["_home-assistant._tcp"], {}, "homeassistant"),
@@ -49,6 +50,10 @@ _STATE = {
                 D.B("chdown", "Kanál −"), D.B("chup", "Kanál +"), D.B("play", "Play", icon="play"), D.B("pause", "Pauza", icon="pause"),
                 D.SEL("app", "Aplikácia", "", [["", "—"], ["netflix", "Netflix"], ["youtube.leanback.v4", "YouTube"], ["com.webos.app.livetv", "Live TV"]]),
                 D.SEL("input", "Vstup", "", [["", "—"], ["HDMI_1", "HDMI 1 – PlayStation"], ["HDMI_2", "HDMI 2"]])],
+    "philips": [D.T("power", "Zapnutá", True), D.S("volume", "Hlasitosť", 18, 0, 60), D.T("mute", "Stlmiť", False),
+                D.T("ambilight", "Ambilight", True), D.PAD("key", D.PHILIPS_PAD, "Ovládač"),
+                D.SEL("app", "Spustiť aplikáciu", "", [["", "—"], ["0", "Netflix"], ["1", "YouTube"], ["2", "HBO Max"],
+                                                        ["3", "Voyo"], ["4", "Prehliadač"], ["5", "Media"]])],
     "upnp": [D.SENS("state", "Stav", "Hrá"), D.S("volume", "Hlasitosť", 22, 0, 100), D.T("mute", "Stlmiť", False),
              D.B("Previous", "Predch.", icon="prev"), D.B("Play", "Play", icon="play"), D.B("Pause", "Pauza", icon="pause"),
              D.B("Next", "Ďalšia", icon="next")],
@@ -90,7 +95,7 @@ def devices():
     now = time.time()
     out = []
     labels = {"shelly": "Shelly", "shellycover": "Shelly", "tasmota": "Tasmota", "wled": "WLED",
-              "hue": "Philips Hue", "yeelight": "Yeelight", "lgwebos": "LG webOS TV",
+              "hue": "Philips Hue", "yeelight": "Yeelight", "lgwebos": "LG webOS TV", "philips": "Philips TV",
               "upnp": "UPnP/DLNA prehrávač", "homeassistant": "Home Assistant"}
     for row in _RAW:
         ip, mac, name, vendor, model, ports, mdns, extra = row[:8]
@@ -102,7 +107,7 @@ def devices():
              "last_seen": now, "first_seen": now - 86400 * 30, "new": ip == "192.168.1.102",
              "drivers": [{"key": drv, "label": labels[drv], "info": {"demo": drv}}] if drv else []}
         d.update(extra)
-        d["category"] = classify(dict(d, drivers=[{"key": "upnp" if drv == "lgwebos" else ("shelly" if drv and drv.startswith("shelly") else drv)}] if drv else []))
+        d["category"] = classify(dict(d, drivers=[{"key": "upnp" if drv in ("lgwebos", "philips") else ("shelly" if drv and drv.startswith("shelly") else drv)}] if drv else []))
         if drv == "homeassistant":
             d["category"] = "server"
         d["controllable"] = bool(drv)

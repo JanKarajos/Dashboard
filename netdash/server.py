@@ -127,7 +127,8 @@ def make_handler(app):
                 if not self._authed():
                     return self._send(401, {"error": "auth", "pin_required": True})
                 return self._send(200, {"devices": app.scanner.device_list(), "scan": app.scanner.progress,
-                                        "meta": app.scanner.meta, "demo": bool(app.demo)})
+                                        "meta": app.scanner.meta, "demo": bool(app.demo),
+                                        "location": app.store.get("settings", "location")})
             m = re.match(r"^/api/devices/([^/]+)/controls$", path)
             if m:
                 if not self._authed():
@@ -135,6 +136,8 @@ def make_handler(app):
                 return self._controls(urllib.parse.unquote(m.group(1)))
             if path == "/":
                 path = "/index.html"
+            elif path in ("/tv", "/tv/"):
+                path = "/tv.html"
             fp = os.path.normpath(os.path.join(STATIC, path.lstrip("/")))
             if not fp.startswith(STATIC + os.sep) or not os.path.isfile(fp):
                 return self._send(404, {"error": "Nenájdené"})

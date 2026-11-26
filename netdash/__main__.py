@@ -49,6 +49,7 @@ def main(argv=None):
     ap.add_argument("--data", help="súbor s dátami (predvolene netdash_data.json vedľa programu)")
     ap.add_argument("--no-browser", action="store_true", help="neotvárať prehliadač")
     ap.add_argument("--no-scan", action="store_true", help="nespúšťať sken pri štarte")
+    ap.add_argument("--location", help="poloha pre počasie v TV režime, napr. 48.15,17.11 (uloží sa)")
     ap.add_argument("--demo", action="store_true", help="ukážkový režim s vymyslenými zariadeniami")
     args = ap.parse_args(argv)
 
@@ -56,6 +57,13 @@ def main(argv=None):
     data_path = args.data or os.path.join(root, "netdash_demo.json" if args.demo else "netdash_data.json")
     store = Store(data_path)
     netutil.raise_fd_limit()
+
+    if args.location:
+        try:
+            lat, lon = [round(float(x), 3) for x in args.location.replace(" ", "").split(",")]
+            store.put("settings", "location", [lat, lon])
+        except ValueError:
+            print("Neplatná poloha, použi formát 48.15,17.11")
 
     pin = None
     if not args.local_only and not args.no_pin:
@@ -88,6 +96,7 @@ def main(argv=None):
     print("  Na tomto počítači:  %s" % url_local)
     if not args.local_only:
         print("  Z mobilu / inde:    http://%s:%d/" % (ip, args.port))
+        print("  Na televízore:      http://%s:%d/tv" % (ip, args.port))
         print("  PIN:                %s" % (pin or "vypnutý"))
     print("  Ukončenie:          Ctrl+C")
     print("=" * 60)

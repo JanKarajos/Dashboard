@@ -63,6 +63,17 @@ python3 netdash.py --demo
 
 **Chromecast, Apple TV a AirPlay** sa zobrazia s menom, ale ich protokoly vyžadujú špeciálne šifrované spojenie, takže ich ovládanie zatiaľ nie je.
 
+## TV režim (domovská obrazovka pre televízor)
+
+Na adrese **`http://<IP počítača>:8765/tv`** je celoobrazovkové prostredie pre TV: hodiny, dátum, počasie a ovládanie všetkých zariadení v dlaždiciach. Ovláda sa **šípkami a OK** na diaľkovom ovládači.
+
+![TV režim](docs/tv-rezim.png)
+
+- **Philips Saphi**: otvor v TV aplikáciu *Internetový prehliadač*, zadaj adresu (vypíše sa v okne programu ako „Na televízore“) a ulož si ju medzi záložky. Vlastnú domovskú obrazovku (launcher) Saphi nainštalovať nedovolí.
+- **Android TV / Google TV / stick**: otvor adresu v prehliadači, napr. TV Bro.
+- **Počasie**: spusti raz program s polohou, napríklad `python3 netdash.py --location 48.15,17.11`. Súradnice svojho mesta nájdeš na mapy.cz pravým klikom → „Co je zde?“. Poloha sa zapamätá.
+- Program musí bežať na počítači v tej istej sieti. Na nonstop použitie sa hodí Raspberry Pi.
+
 ## Ďalšie funkcie
 
 - **Premenovanie** zariadení (ikonka ceruzky alebo dvojklik na názov). Meno ostane uložené podľa MAC adresy.
