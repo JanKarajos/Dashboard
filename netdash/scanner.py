@@ -116,6 +116,10 @@ class Scanner:
         gw = netutil.default_gateway()
         hosts = [str(h) for h in net.hosts()]
         started = time.time()
+        fd_limit = netutil.raise_fd_limit()
+        budget = max(32, fd_limit - 96)  # rezerva pre server a objavovanie
+        ping_workers = max(8, min(128, budget // 4))  # ping = proces + rúry
+        port_workers = max(16, min(200, budget // 2))
 
         # objavovanie cez multicast beží paralelne s pingovaním
         disc = {}
@@ -143,7 +147,7 @@ class Scanner:
             self._tick()
             return ip, ok
 
-        with ThreadPoolExecutor(128) as ex:
+        with ThreadPoolExecutor(ping_workers) as ex:
             for ip, ok in ex.map(probe, hosts):
                 if ok:
                     alive.add(ip)
@@ -167,7 +171,7 @@ class Scanner:
             self._tick()
             return ip, port, r == "open"
 
-        with ThreadPoolExecutor(200) as ex:
+        with ThreadPoolExecutor(port_workers) as ex:
             for ip, port, ok in ex.map(scan_port, jobs):
                 if ok:
                     open_ports[ip].append(port)
@@ -182,7 +186,7 @@ class Scanner:
             self._tick()
             return d
 
-        with ThreadPoolExecutor(32) as ex:
+        with ThreadPoolExecutor(max(4, min(32, budget // 8))) as ex:
             found = list(ex.map(identify, alive))
 
         # zlúčenie s predchádzajúcimi výsledkami (offline zariadenia ostávajú)

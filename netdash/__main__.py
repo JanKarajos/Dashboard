@@ -55,6 +55,7 @@ def main(argv=None):
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_path = args.data or os.path.join(root, "netdash_demo.json" if args.demo else "netdash_data.json")
     store = Store(data_path)
+    netutil.raise_fd_limit()
 
     pin = None
     if not args.local_only and not args.no_pin:

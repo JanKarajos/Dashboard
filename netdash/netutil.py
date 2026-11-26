@@ -37,6 +37,26 @@ def run(cmd, timeout=5):
         return -1, ""
 
 
+def raise_fd_limit():
+    """Zvýši limit otvorených súborov (macOS má predvolene len 256). Vráti platný limit."""
+    try:
+        import resource
+    except ImportError:  # Windows – limit sa netýka socketov
+        return 4096
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    for target in (10240, 4096, 2048, 1024):
+        if hard != resource.RLIM_INFINITY:
+            target = min(target, hard)
+        if target <= soft:
+            break
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+            return target
+        except (ValueError, OSError):
+            continue
+    return soft
+
+
 def local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
