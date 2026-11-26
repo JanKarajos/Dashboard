@@ -561,6 +561,29 @@ class Yeelight(Driver):
             self._cmd(ip, "set_ct_abx", [as_int(value), "smooth", 300])
 
 
+
+# ================================================================== zapnutie TV (Wake-on-LAN)
+
+TV_OFF_HELP = ("TV je vypnutá alebo v pohotovosti. Zapnutie funguje cez sieť, len ak je v TV zapnuté "
+               "„%s“.")
+
+
+def tv_reachable(ip, ports):
+    return any(netutil.tcp_probe(ip, p, 0.8) == "open" for p in ports)
+
+
+def tv_power_on(dev):
+    mac = dev.get("mac") or (dev.get("driver_info") or {}).get("mac")
+    if not mac:
+        raise ActionError("Neviem MAC adresu TV – zapni ju raz ovládačom a daj Skenovať.")
+    mac = netutil.norm_mac(mac.replace("-", ":")) if ":" in mac or "-" in mac else \
+        ":".join(mac[i:i + 2] for i in range(0, 12, 2)).lower()
+    parts = dev["ip"].split(".")
+    addrs = ["255.255.255.255", ".".join(parts[:3] + ["255"]), dev["ip"]]
+    for _ in range(3):  # TV v hlbokom spánku niekedy prvý paket prepočuje
+        netutil.wake_on_lan(mac, addrs)
+        time.sleep(0.3)
+
 # ================================================================== Roku
 
 ROKU_PAD = [
@@ -630,12 +653,19 @@ class SamsungTV(Driver):
                 "token_auth": d.get("TokenAuthSupport") in ("true", True)}
 
     def controls(self, dev, store):
-        out = [PAD("key", SAMSUNG_PAD, "Ovládač")]
+        if not tv_reachable(dev["ip"], (8001, 8002)):
+            return [INFO(TV_OFF_HELP % "Nastavenia → Všeobecné → Sieť → Expertné nastavenia → Zapnúť cez mobil"),
+                    B("poweron", "Zapnúť TV", icon="power")]
+        out = [B("poweron", "Zapnúť TV", icon="power"), PAD("key", SAMSUNG_PAD, "Ovládač")]
         if not store.get("secrets", "samsung:" + dev["ip"]):
             out.insert(0, INFO("Pri prvom stlačení tlačidla potvrď na TV prístup pre „Dashboard“."))
         return out
 
     def set(self, dev, store, cid, value):
+        if cid == "poweron":
+            tv_power_on(dev)
+            time.sleep(4)
+            return
         name = base64.b64encode(b"Dashboard").decode()
         skey = "samsung:" + dev["ip"]
         token = store.get("secrets", skey)
@@ -734,6 +764,10 @@ class LGWebOS(Driver):
                 return msg.get("payload") or {}
 
     def controls(self, dev, store):
+        if not tv_reachable(dev["ip"], (3000, 3001)):
+            return [INFO(TV_OFF_HELP % "Nastavenia → Všeobecné → Zariadenia → Správa TV → Zapnúť cez Wi-Fi "
+                         "(staršie TV: Pripojenie → Mobile TV On)"),
+                    B("poweron", "Zapnúť TV", icon="power")]
         if not store.get("secrets", "lg:" + dev["ip"]):
             return [INFO("Klikni Spárovať a na TV potvrď žiadosť ovládačom."), B("pair", "Spárovať", icon="link")]
         ws = self._session(dev, store)
@@ -759,6 +793,10 @@ class LGWebOS(Driver):
         return out
 
     def set(self, dev, store, cid, value):
+        if cid == "poweron":
+            tv_power_on(dev)
+            time.sleep(4)
+            return
         ws = self._session(dev, store, pairing_ok=(cid == "pair"))
         if ws is None:
             raise ActionError("TV nie je spárovaná")

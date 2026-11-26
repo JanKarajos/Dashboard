@@ -190,7 +190,8 @@ function matchesQuery(d) {
 
 function renderGrids() {
   const list = S.devices.filter(d => matchesCat(d, S.filter) && matchesQuery(d));
-  const ctrl = list.filter(d => d.controllable && d.online)
+  const canWake = d => (d.drivers || []).some(x => x.key === "lgwebos" || x.key === "samsung");
+  const ctrl = list.filter(d => d.controllable && (d.online || canWake(d)))
     .sort((a, b) => (a.category === "server") - (b.category === "server") || a.display_name.localeCompare(b.display_name, "sk"));
   const order = { router: 0, computer: 1, server: 2, smart: 3, media: 4, printer: 5, camera: 6, phone: 7, unknown: 8 };
   const all = [...list].sort((a, b) => (b.online - a.online) || (order[a.category] - order[b.category]) ||
@@ -447,7 +448,7 @@ function renderControls(d) {
 setInterval(() => {
   if (document.hidden || S.scan.running) return;
   for (const d of S.devices) {
-    if (!d.controllable || !d.online || !cards.has("c:" + d.id)) continue;
+    if (!d.controllable || !cards.has("c:" + d.id)) continue;
     if (Date.now() - (S.lastAction[d.id] || 0) < 5000) continue;
     if (!cards.get("c:" + d.id).el.isConnected) continue;
     loadControls(d, true);
