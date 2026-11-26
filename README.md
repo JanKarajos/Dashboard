@@ -53,6 +53,7 @@ python3 netdash.py --demo
 | **Yeelight** | zap/vyp, jas, farba, teplota farby | v appke Yeelight zapni *LAN Control* |
 | **Sonos** a iné **UPnP/DLNA** prehrávače, TV, receivery | hlasitosť, stlmenie, play/pauza/ďalšia | |
 | **LG webOS TV** | hlasitosť, stlmenie, vypnutie, kanály, aplikácie, vstupy HDMI | pri párovaní potvrď na TV |
+| **Philips TV** (Android TV aj Saphi) | zapnutie z pohotovosti, vypnutie, hlasitosť, Ambilight, celý ovládač, aplikácie | raz sa spáruje PIN-om z TV; na zapnutie z úplného vypnutia zapni v TV *Zapnúť pomocou Wi-Fi (WoWLAN)* |
 | **Samsung Smart TV** (2016+) | celý diaľkový ovládač | pri prvom stlačení potvrď na TV |
 | **Roku** | diaľkový ovládač, spúšťanie aplikácií | *Ovládanie mobilnými appkami* musí byť povolené |
 | **Home Assistant** | svetlá, vypínače, ventilátory, žalúzie, brány, kúrenie, médiá, zámky, vysávače, scény, skripty | vlož dlhodobý token (Profil → Zabezpečenie) |

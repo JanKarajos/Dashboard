@@ -190,7 +190,7 @@ function matchesQuery(d) {
 
 function renderGrids() {
   const list = S.devices.filter(d => matchesCat(d, S.filter) && matchesQuery(d));
-  const canWake = d => (d.drivers || []).some(x => x.key === "lgwebos" || x.key === "samsung");
+  const canWake = d => (d.drivers || []).some(x => ["lgwebos", "samsung", "philips"].includes(x.key));
   const ctrl = list.filter(d => d.controllable && (d.online || canWake(d)))
     .sort((a, b) => (a.category === "server") - (b.category === "server") || a.display_name.localeCompare(b.display_name, "sk"));
   const order = { router: 0, computer: 1, server: 2, smart: 3, media: 4, printer: 5, camera: 6, phone: 7, unknown: 8 };

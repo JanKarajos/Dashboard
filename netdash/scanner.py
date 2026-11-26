@@ -8,7 +8,7 @@ from . import discovery, drivers, netutil
 
 PORTS = {
     21: "FTP", 22: "SSH", 23: "Telnet", 53: "DNS", 80: "HTTP", 139: "NetBIOS", 443: "HTTPS",
-    445: "SMB", 548: "AFP", 554: "RTSP", 631: "IPP", 1400: "Sonos", 1883: "MQTT", 1900: "UPnP",
+    445: "SMB", 548: "AFP", 554: "RTSP", 631: "IPP", 1400: "Sonos", 1925: "Philips TV", 1926: "Philips TV", 1883: "MQTT", 1900: "UPnP",
     3000: "webOS", 3001: "webOS", 3389: "RDP", 5000: "HTTP-5000", 5001: "HTTPS-5001", 5900: "VNC",
     6053: "ESPHome", 6668: "Tuya", 7000: "AirPlay", 8001: "Samsung TV", 8002: "Samsung TV",
     8008: "Cast", 8009: "Cast", 8060: "Roku", 8080: "HTTP-8080", 8081: "HTTP-8081",
@@ -37,7 +37,7 @@ def classify(d):
         return "smart"
     if "homeassistant" in drv or 8123 in p:
         return "server"
-    if set(drv) & {"roku", "samsung", "lgwebos", "upnp"} or 8008 in p or 8009 in p or any(
+    if set(drv) & {"roku", "samsung", "lgwebos", "philips", "upnp"} or 8008 in p or 8009 in p or any(
             s in svc for s in ("_googlecast", "_airplay", "_raop", "_spotify", "_sonos", "_androidtv", "_amzn")) \
             or "mediarenderer" in blob or any(w in blob for w in ("tv", "sonos", "chromecast", "roku")):
         return "media"

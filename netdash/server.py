@@ -213,6 +213,7 @@ def make_handler(app):
                 addrs = ["255.255.255.255"]
                 if meta.get("network"):
                     addrs.append(str(ipaddress.IPv4Network(meta["network"]).broadcast_address))
+                addrs.append(dev["ip"])
                 if not app.demo:
                     netutil.wake_on_lan(dev["mac"], addrs)
                 return self._send(200, {"ok": True})

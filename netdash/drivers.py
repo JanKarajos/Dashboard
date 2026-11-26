@@ -2,6 +2,8 @@
 ovládacie prvky (generický formát pre UI) a vykonať zmenu."""
 import base64
 import colorsys
+import hashlib
+import hmac
 import json
 import re
 import socket
@@ -823,6 +825,209 @@ class LGWebOS(Driver):
             ws.close()
 
 
+
+# ================================================================== Philips TV (JointSPACE)
+
+PHILIPS_SECRET = base64.b64decode(
+    "ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA==")
+PHILIPS_PAD = [
+    [["Standby", "⏻"], ["Home", "⌂"], ["Back", "↩"]],
+    [["Source", "Zdroj"], ["CursorUp", "▲"], ["Options", "Možnosti"]],
+    [["CursorLeft", "◀"], ["Confirm", "OK"], ["CursorRight", "▶"]],
+    [["ChannelStepDown", "CH−"], ["CursorDown", "▼"], ["ChannelStepUp", "CH+"]],
+    [["Rewind", "⏪"], ["PlayPause", "⏯"], ["FastForward", "⏩"]],
+    [["VolumeDown", "🔉"], ["Mute", "🔇"], ["VolumeUp", "🔊"]],
+]
+PHILIPS_OFF_HELP = ("TV je vypnutá a na sieti neodpovedá. Aby sa dala zapnúť cez sieť, zapni v TV "
+                    "Nastavenia → Bezdrôtové pripojenie a siete → Drôtové alebo Wi-Fi → "
+                    "Zapnúť pomocou Wi-Fi (WoWLAN), prípadne aj Zapnúť pomocou Chromecastu.")
+
+
+class PhilipsTV(Driver):
+    key = "philips"
+    label = "Philips TV"
+    category = "media"
+    ports = (1925, 1926)
+
+    def __init__(self):
+        self.pending = {}   # ip -> (auth_key, timestamp)
+        self.apps = {}      # ip -> zoznam aplikácií
+
+    def applicable(self, ports, hints):
+        s = hints.get("ssdp") or {}
+        blob = " ".join(str(s.get(k) or "") for k in ("manufacturer", "modelName", "friendlyName", "server")).lower()
+        return 1925 in ports or 1926 in ports or "philips" in blob or "tp vision" in blob
+
+    def detect(self, ip, ports, hints):
+        for secure, port in ((True, 1926), (False, 1925)):
+            if port not in ports:
+                continue
+            for api in (6, 5, 1):
+                j = get_json("%s://%s:%d/%d/system" % ("https" if secure else "http", ip, port, api))
+                if isinstance(j, dict) and ({"name", "model", "api_version", "menulanguage"} & set(j)):
+                    major = ((j.get("api_version") or {}).get("Major")) or api
+                    return {"vendor": "Philips", "model": j.get("model") or "Philips TV", "name": j.get("name"),
+                            "secure": secure, "api": int(major) if int(major) in (1, 5, 6) else api}
+        s = hints.get("ssdp") or {}
+        blob = " ".join(str(s.get(k) or "") for k in ("manufacturer", "modelName", "friendlyName")).lower()
+        if "philips" in blob or "tp vision" in blob:
+            return {"vendor": "Philips", "model": s.get("modelName") or "Philips TV", "name": s.get("friendlyName"),
+                    "secure": 1925 not in ports, "api": 6}
+        return None
+
+    # -------------------------------------------------------------- komunikácia
+    def _device(self, store):
+        did = store.get("settings", "philips_device_id")
+        if not did:
+            import secrets as _s
+            did = "".join(_s.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for _ in range(16))
+            store.put("settings", "philips_device_id", did)
+        return {"device_name": "NetDash", "device_os": "Android", "app_name": "NetDash", "type": "native",
+                "app_id": "app.netdash", "id": did}
+
+    def _base(self, dev):
+        i = dev.get("driver_info") or {}
+        if i.get("secure", True):
+            return "https://%s:1926/%d/" % (dev["ip"], i.get("api", 6))
+        return "http://%s:1925/%d/" % (dev["ip"], i.get("api", 6))
+
+    def _creds(self, dev, store):
+        return store.get("secrets", "philips:" + dev["ip"])
+
+    def _req(self, dev, store, method, path, body=None, auth="stored", timeout=4):
+        import urllib.request as ur
+        import urllib.error as ue
+        base = self._base(dev)
+        handlers = [ur.ProxyHandler({}), ur.HTTPSHandler(context=netutil._SSL)]
+        creds = self._creds(dev, store) if auth == "stored" else auth
+        if creds and base.startswith("https"):
+            pm = ur.HTTPPasswordMgrWithDefaultRealm()
+            pm.add_password(None, base, creds[0], creds[1])
+            handlers.append(ur.HTTPDigestAuthHandler(pm))
+        data = json.dumps(body).encode() if body is not None else None
+        req = ur.Request(base + path, data=data, method=method, headers={"Content-Type": "application/json"})
+        try:
+            with ur.build_opener(*handlers).open(req, timeout=timeout) as r:
+                txt = r.read().decode("utf-8", "replace")
+        except ue.HTTPError as e:
+            if e.code == 401:
+                raise ActionError("TV odmietla prístup – spáruj ju znova.")
+            raise ActionError("TV vrátila chybu %s" % e.code)
+        except (ue.URLError, OSError, ValueError) as e:
+            raise ActionError("TV neodpovedá: %s" % getattr(e, "reason", e))
+        try:
+            return json.loads(txt) if txt.strip() else {}
+        except ValueError:
+            return {}
+
+    def _reachable(self, dev):
+        i = dev.get("driver_info") or {}
+        return tv_reachable(dev["ip"], (1926,) if i.get("secure", True) else (1925,))
+
+    # -------------------------------------------------------------- UI
+    def controls(self, dev, store):
+        i = dev.get("driver_info") or {}
+        if not self._reachable(dev):
+            return [INFO(PHILIPS_OFF_HELP), B("poweron", "Zapnúť TV", icon="power")]
+        if i.get("secure", True) and not self._creds(dev, store):
+            if dev["ip"] in self.pending:
+                return [INFO("Na TV sa zobrazil PIN – zadaj ho sem."), INPUT("pin", "PIN z televízora", "1234", button="Potvrdiť"),
+                        B("pair", "Zobraziť nový PIN", icon="link")]
+            return [INFO("Dashboard treba raz spárovať s TV. Klikni Spárovať – na TV sa zobrazí PIN."),
+                     B("pair", "Spárovať", icon="link")]
+        try:
+            power = self._req(dev, store, "GET", "powerstate").get("powerstate")
+        except ActionError as e:
+            if "spáruj" in str(e):
+                store.put("secrets", "philips:" + dev["ip"], None)
+                return [INFO("Párovanie s TV vypršalo."), B("pair", "Spárovať znova", icon="link")]
+            raise
+        on = power == "On"
+        out = [T("power", "Zapnutá", on)]
+        if not on:
+            out.insert(0, INFO("TV je v pohotovosti."))
+            return out
+        try:
+            v = self._req(dev, store, "GET", "audio/volume")
+            out += [S("volume", "Hlasitosť", v.get("current", 0), v.get("min", 0), v.get("max", 60)),
+                    T("mute", "Stlmiť", v.get("muted"))]
+        except ActionError:
+            pass
+        try:
+            amb = self._req(dev, store, "GET", "ambilight/power")
+            if "power" in amb:
+                out.append(T("ambilight", "Ambilight", amb["power"] == "On"))
+        except ActionError:
+            pass
+        out.append(PAD("key", PHILIPS_PAD, "Ovládač"))
+        try:
+            apps = self._req(dev, store, "GET", "applications").get("applications") or []
+        except ActionError:
+            apps = []
+        if apps:
+            apps = sorted(apps, key=lambda a: (a.get("label") or "").lower())
+            self.apps[dev["ip"]] = apps
+            out.append(SEL("app", "Spustiť aplikáciu", "", [["", "—"]] + [[str(n), a.get("label") or "?"] for n, a in enumerate(apps)]))
+        return out
+
+    def set(self, dev, store, cid, value):
+        ip = dev["ip"]
+        if cid == "pair":
+            r = self._req(dev, store, "POST", "pair/request", auth=None, body={
+                "scope": ["read", "write", "control"], "device": self._device(store)})
+            if r.get("error_id") != "SUCCESS":
+                raise ActionError("TV odmietla párovanie: %s" % (r.get("error_text") or r.get("error_id")))
+            self.pending[ip] = (r["auth_key"], r["timestamp"])
+            return
+        if cid == "pin":
+            if ip not in self.pending:
+                raise ActionError("Najprv klikni Spárovať")
+            auth_key, ts = self.pending[ip]
+            pin = re.sub(r"\D", "", str(value))
+            sig = base64.b64encode(hmac.new(PHILIPS_SECRET, (str(ts) + pin).encode(), hashlib.sha1)
+                                   .hexdigest().encode()).decode()
+            dv = self._device(store)
+            try:
+                self._req(dev, store, "POST", "pair/grant", auth=(dv["id"], auth_key), body={
+                    "auth": {"auth_AppId": "1", "pin": pin, "auth_timestamp": ts, "auth_signature": sig},
+                    "device": dv})
+            except ActionError as e:
+                if "400" in str(e) or "401" in str(e) or "odmietla" in str(e):
+                    raise ActionError("Nesprávny alebo neplatný PIN. Klikni Zobraziť nový PIN a skús znova.")
+                raise
+            store.put("secrets", "philips:" + ip, [dv["id"], auth_key])
+            self.pending.pop(ip, None)
+            return
+        if cid in ("poweron", "power") and as_bool(value):
+            if not self._reachable(dev):
+                tv_power_on(dev)
+                deadline = time.time() + 20
+                while time.time() < deadline and not self._reachable(dev):
+                    time.sleep(1)
+                if not self._reachable(dev):
+                    raise ActionError("Magický paket bol odoslaný, ale TV sa nezobudila. " + PHILIPS_OFF_HELP)
+            self._req(dev, store, "POST", "powerstate", body={"powerstate": "On"})
+            time.sleep(2)
+            return
+        if cid == "power":
+            self._req(dev, store, "POST", "powerstate", body={"powerstate": "Standby"})
+        elif cid == "volume":
+            v = self._req(dev, store, "GET", "audio/volume")
+            self._req(dev, store, "POST", "audio/volume", body={"muted": bool(v.get("muted")), "current": as_int(value)})
+        elif cid == "mute":
+            v = self._req(dev, store, "GET", "audio/volume")
+            self._req(dev, store, "POST", "audio/volume", body={"muted": as_bool(value), "current": v.get("current", 0)})
+        elif cid == "ambilight":
+            self._req(dev, store, "POST", "ambilight/power", body={"power": "On" if as_bool(value) else "Off"})
+        elif cid == "key":
+            self._req(dev, store, "POST", "input/key", body={"key": str(value)})
+        elif cid == "app" and value != "":
+            apps = self.apps.get(ip) or []
+            n = as_int(value)
+            if n >= len(apps):
+                raise ActionError("Aplikácia sa nenašla, obnov stránku")
+            self._req(dev, store, "POST", "activities/launch", body={"intent": apps[n].get("intent")})
+
 # ================================================================== UPnP / DLNA (Sonos, TV, receivery)
 
 class UPnPRenderer(Driver):
@@ -1045,7 +1250,7 @@ class HomeAssistant(Driver):
 
 # ================================================================== registrácia
 
-DRIVERS = [Shelly(), Tasmota(), WLED(), Hue(), Yeelight(), Roku(), SamsungTV(), LGWebOS(),
+DRIVERS = [Shelly(), Tasmota(), WLED(), Hue(), Yeelight(), Roku(), SamsungTV(), LGWebOS(), PhilipsTV(),
            HomeAssistant(), UPnPRenderer()]
 BY_KEY = {d.key: d for d in DRIVERS}
 
