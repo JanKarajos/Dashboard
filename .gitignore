@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+netdash_data.json
+netdash_demo.json
+*.tmp
