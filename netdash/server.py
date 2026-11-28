@@ -147,7 +147,7 @@ def make_handler(app):
                     sugg = []
                 return self._send(200, {"cameras": [app.cameras.public(c) for c in app.cameras.all()],
                                         "suggestions": sugg, "ffmpeg": bool(camlib.ffmpeg_path()),
-                                        "presets": {k: {"label": v["label"], "user": v["user"], "note": v.get("note", "")}
+                                        "presets": {k: {"label": v["label"], "user": v["user"], "note": v.get("note", ""), "channels": bool(v.get("channels"))}
                                                     for k, v in camlib.PRESETS.items()}})
             m = re.match(r"^/cam/([0-9a-z]+)/(snapshot\.jpg|stream\.mjpg)$", path)
             if m:

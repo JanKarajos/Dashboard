@@ -992,8 +992,8 @@ function syncCams() {
 function editCam(cam) {
   S.camForm = cam ? { id: cam.id, type: cam.type, name: cam.name, preset: cam.preset || "generic", ip: cam.ip || "", user: cam.user || "", password: "",
     rtsp: (cam.custom || {}).rtsp || "", snapshot: (cam.custom || {}).snapshot || "", mjpeg: (cam.custom || {}).mjpeg || "",
-    ha_ip: cam.ha_ip, entity: cam.entity, editing: true } :
-    { type: "net", name: "", preset: "hikvision", ip: "", user: "admin", password: "", rtsp: "", snapshot: "", mjpeg: "" };
+    ha_ip: cam.ha_ip, entity: cam.entity, channel: cam.channel || 1, editing: true } :
+    { type: "net", name: "", preset: "hikvision", ip: "", user: "admin", password: "", rtsp: "", snapshot: "", mjpeg: "", channel: 1 };
   S.camTest = null;
   go("cameras");
   setTimeout(() => { const f = $(".cam-form"); if (f) f.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
@@ -1039,6 +1039,7 @@ function camForm() {
     card.append(h("div", { class: "form-grid" },
       lbl("Značka / typ", sel), lbl("Názov", bind("name", { maxlength: "40", placeholder: "Napr. Vchod" })),
       F.preset !== "generic" ? lbl("IP adresa", bind("ip", { placeholder: "192.168.1.60", inputmode: "decimal" })) : null,
+      (S.cams.presets[F.preset] || {}).channels ? lbl("Kanál", bind("channel", { type: "number", min: "1", max: "64", inputmode: "numeric" }), "1 = samostatná kamera") : null,
       lbl("Používateľ", bind("user", { autocomplete: "off" })),
       lbl("Heslo", bind("password", { type: "password", autocomplete: "new-password", placeholder: F.editing ? "nezmenené" : "" }))),
     note ? h("div", { class: "notice" }, note) : "");

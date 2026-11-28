@@ -16,12 +16,15 @@ import urllib.request
 from . import netutil
 
 PRESETS = {
-    "hikvision": {"label": "Hikvision / HiLook", "rtsp": "rtsp://{u}:{p}@{ip}:554/Streaming/Channels/102",
-                  "snapshot": "http://{ip}/ISAPI/Streaming/channels/101/picture", "user": "admin"},
-    "dahua": {"label": "Dahua / Imou / Amcrest", "rtsp": "rtsp://{u}:{p}@{ip}:554/cam/realmonitor?channel=1&subtype=1",
-              "snapshot": "http://{ip}/cgi-bin/snapshot.cgi", "user": "admin"},
-    "reolink": {"label": "Reolink", "rtsp": "rtsp://{u}:{p}@{ip}:554/h264Preview_01_sub",
-                "snapshot": "http://{ip}/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=netdash&user={u}&password={p}", "user": "admin"},
+    "hikvision": {"label": "Hikvision / HiLook", "rtsp": "rtsp://{u}:{p}@{ip}:554/Streaming/Channels/{ch}02",
+                  "snapshot": "http://{ip}/ISAPI/Streaming/channels/{ch}01/picture", "user": "admin", "channels": True,
+                  "note": "Meno je zvyčajne admin a heslo je heslo zariadenia (nie overovací kód z Hik-Connect). "
+                          "Pri rekordéri (NVR/DVR) zadaj IP rekordéra a číslo kanála kamery."},
+    "dahua": {"label": "Dahua / Imou / Amcrest", "rtsp": "rtsp://{u}:{p}@{ip}:554/cam/realmonitor?channel={ch}&subtype=1",
+              "snapshot": "http://{ip}/cgi-bin/snapshot.cgi?channel={ch}", "user": "admin", "channels": True},
+    "reolink": {"label": "Reolink", "rtsp": "rtsp://{u}:{p}@{ip}:554/h264Preview_{ch2}_sub",
+                "snapshot": "http://{ip}/cgi-bin/api.cgi?cmd=Snap&channel={ch0}&rs=netdash&user={u}&password={p}", "user": "admin",
+                "channels": True},
     "tapo": {"label": "TP-Link Tapo / VIGI", "rtsp": "rtsp://{u}:{p}@{ip}:554/stream2", "snapshot": "",
              "user": "", "note": "Meno a heslo si vytvor v appke Tapo: Kamera → Nastavenia → Pokročilé → Účet kamery."},
     "ezviz": {"label": "Ezviz", "rtsp": "rtsp://admin:{p}@{ip}:554/h264/ch1/sub/av_stream", "snapshot": "",
@@ -73,9 +76,12 @@ def _host_allowed(url):
     return bool(infos)
 
 
-def _fill(tpl, ip, user, pw):
+def _fill(tpl, ip, user, pw, ch=1):
     q = lambda s: urllib.parse.quote(s or "", safe="")  # noqa: E731
-    return tpl.replace("{ip}", ip).replace("{u}", q(user)).replace("{p}", q(pw)) if tpl else ""
+    if not tpl:
+        return ""
+    return (tpl.replace("{ip}", ip).replace("{u}", q(user)).replace("{p}", q(pw)).replace("{ch2}", "%02d" % ch)
+            .replace("{ch0}", str(ch - 1)).replace("{ch}", str(ch)))
 
 
 class Cameras:
@@ -125,7 +131,11 @@ class Cameras:
             pw = data.get("password")
             if pw is None or pw == "":
                 pw = self.store.get("secrets", "cam:" + cid) or ""
-            cam = {"id": cid, "type": "net", "name": name, "preset": preset, "ip": ip, "user": user}
+            try:
+                ch = max(1, min(64, int(data.get("channel") or old.get("channel") or 1)))
+            except (TypeError, ValueError):
+                ch = 1
+            cam = {"id": cid, "type": "net", "name": name, "preset": preset, "ip": ip, "user": user, "channel": ch}
             if preset == "generic":
                 for k in ("rtsp", "snapshot", "mjpeg"):
                     v = str(data.get(k) or "").strip()
@@ -136,8 +146,8 @@ class Cameras:
                 if not ip:
                     raise CameraError("Zadaj IP adresu kamery")
                 p = PRESETS[preset]
-                cam["rtsp"] = _fill(p["rtsp"], ip, user, pw)
-                cam["snapshot"] = _fill(p["snapshot"], ip, user, pw)
+                cam["rtsp"] = _fill(p["rtsp"], ip, user, pw, ch)
+                cam["snapshot"] = _fill(p["snapshot"], ip, user, pw, ch)
                 cam["mjpeg"] = ""
             for k in ("rtsp", "snapshot", "mjpeg"):
                 if cam.get(k) and not _host_allowed(cam[k]):
