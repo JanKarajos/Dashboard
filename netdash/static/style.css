@@ -394,3 +394,36 @@ details.more[open] summary { margin-bottom: 8px; }
   .grid { grid-template-columns: minmax(0, 1fr); }
   .dev-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ------------------------------------------------------------------ kamery */
+.cam { position: relative; overflow: hidden; padding: 0; aspect-ratio: 16 / 9; background: #0b0c0e; cursor: default; display: block; }
+.cam.w2 { cursor: pointer; }
+.cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
+.cam.ok img { opacity: 1; }
+.cam:fullscreen { border-radius: 0; aspect-ratio: auto; }
+.cam:fullscreen img { object-fit: contain; }
+.cam::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.55), transparent 30%, transparent 75%, rgba(0,0,0,.35)); z-index: 1; pointer-events: none; }
+.cam:not(.ok)::after { content: ""; position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px; border-radius: 50%; border: 3px solid rgba(255,255,255,.15); border-top-color: #fff; animation: spin .8s linear infinite; }
+.cam-top { position: absolute; left: 0; right: 0; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 12px 12px 0 16px; color: #fff; }
+.cam-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; font-size: 14px; letter-spacing: .02em; text-transform: uppercase; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.cam-name .live { width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; box-shadow: 0 0 0 3px rgba(255,77,77,.25); }
+.cam:not(.ok) .live { background: #888; box-shadow: none; }
+.cam-act { display: flex; gap: 6px; opacity: 0; transition: opacity .15s; }
+.cam:hover .cam-act, .cam:focus-within .cam-act { opacity: 1; }
+@media (hover: none) { .cam-act { opacity: 1; } }
+.round.sm { width: 36px; height: 36px; background: rgba(0,0,0,.45); border-color: rgba(255,255,255,.15); color: #fff; backdrop-filter: blur(8px); }
+.round.sm svg { width: 17px; height: 17px; }
+.cam-err { position: absolute; left: 16px; right: 16px; bottom: 14px; z-index: 2; color: #fff; font-size: 13.5px; background: rgba(0,0,0,.55); padding: 8px 12px; border-radius: 12px; }
+.cam:not(.ok) .cam-err:not([hidden]) ~ * { }
+.cam-grid { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+@media (max-width: 760px) { .cam-grid { grid-template-columns: minmax(0, 1fr); } }
+.cam-form { gap: 14px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.form-row { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.form-row .field { color: var(--text); font-size: 15px; flex: none; height: 44px; }
+.form-row small { color: var(--faint); }
+select.field { max-width: none; border-radius: 14px; }
+.cam-preview { width: 100%; max-width: 480px; border-radius: 14px; }
+.notice.err { color: var(--danger); }
+.btn.danger { color: var(--danger); }
+.notice-card pre { margin: 4px 0 0; font-size: 13px; background: var(--glass-2); padding: 10px 12px; border-radius: 12px; overflow-x: auto; }

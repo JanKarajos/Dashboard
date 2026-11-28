@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import drivers, netutil
+from . import cameras as camlib, drivers, netutil
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
@@ -28,6 +28,7 @@ class App:
         self.scanner = scanner
         self.pin = pin
         self.demo = demo
+        self.cameras = camlib.Cameras(store, demo=bool(demo))
         self.sessions = set(store.get("settings", "sessions", []) or [])
         self.fails = {}
         self.dev_locks = {}
@@ -136,6 +137,34 @@ def make_handler(app):
                 if not self._authed():
                     return self._send(401, {"error": "auth"})
                 return self._controls(urllib.parse.unquote(m.group(1)))
+            if path == "/api/cameras":
+                if not self._authed():
+                    return self._send(401, {"error": "auth"})
+                fut = POOL.submit(app.cameras.suggestions, app.scanner.device_list())
+                try:
+                    sugg = fut.result(10)
+                except Exception:  # noqa
+                    sugg = []
+                return self._send(200, {"cameras": [app.cameras.public(c) for c in app.cameras.all()],
+                                        "suggestions": sugg, "ffmpeg": bool(camlib.ffmpeg_path()),
+                                        "presets": {k: {"label": v["label"], "user": v["user"], "note": v.get("note", "")}
+                                                    for k, v in camlib.PRESETS.items()}})
+            m = re.match(r"^/cam/([0-9a-z]+)/(snapshot\.jpg|stream\.mjpg)$", path)
+            if m:
+                if not self._authed():
+                    return self._send(401, {"error": "auth"})
+                cam = app.cameras.get(m.group(1))
+                if not cam:
+                    return self._send(404, {"error": "Kamera nenájdená"})
+                if m.group(2) == "snapshot.jpg":
+                    fut = POOL.submit(app.cameras.snapshot, cam)
+                    try:
+                        return self._send(200, fut.result(20), "image/jpeg")
+                    except camlib.CameraError as e:
+                        return self._send(502, {"error": str(e)})
+                    except FutTimeout:
+                        return self._send(504, {"error": "Kamera neodpovedá"})
+                return self._stream(cam, "slow" in (urllib.parse.urlparse(self.path).query or ""))
             if path == "/":
                 path = "/index.html"
             elif path in ("/tv", "/tv/"):
@@ -156,6 +185,23 @@ def make_handler(app):
                 return self._send(200, {"controls": fut.result(timeout)})
             except FutTimeout:
                 return self._send(504, {"error": "Zariadenie neodpovedá včas"})
+
+        def _stream(self, cam, slow):
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+
+            def write(b):
+                self.wfile.write(b)
+                self.wfile.flush()
+            try:
+                app.cameras.stream(cam, write, slow=slow)
+            except (OSError, camlib.CameraError, ValueError):
+                pass  # klient odišiel alebo kamera zlyhala – prehliadač zavolá snapshot kvôli chybovej hláške
 
         # ---------------------------------------------------------- POST
         def do_POST(self):
@@ -186,6 +232,30 @@ def make_handler(app):
 
             if not self._authed():
                 return self._send(401, {"error": "auth"})
+
+            if path == "/api/cameras":
+                act = body.get("action")
+                try:
+                    if act == "delete":
+                        app.cameras.delete(str(body.get("id")))
+                        return self._send(200, {"ok": True})
+                    if app.demo:
+                        return self._send(400, {"error": "V ukážkovom režime sa kamery nepridávajú"})
+                    cam = app.cameras.save(body.get("camera") or {})
+                    if act == "test" or body.get("test", True):
+                        fut = POOL.submit(app.cameras.snapshot, cam)
+                        try:
+                            img = fut.result(20)
+                        except FutTimeout:
+                            raise camlib.CameraError("Kamera neodpovedá")
+                        if act == "test":
+                            return self._send(200, {"ok": True, "image": camlib.data_uri(img)})
+                    app.cameras.commit(cam)
+                    return self._send(200, {"ok": True, "camera": app.cameras.public(cam)})
+                except camlib.CameraError as e:
+                    return self._send(400, {"error": str(e)})
+                except (KeyError, TypeError) as e:
+                    return self._send(400, {"error": "Neúplné údaje: %s" % e})
 
             if path == "/api/settings":
                 if "location" in body:

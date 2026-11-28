@@ -67,6 +67,7 @@ const ICONS = {
   unknown: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
   remote: '<rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="8" r="2"/><path d="M10 14h.01M14 14h.01M10 17h.01M14 17h.01"/>',
   download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
 };
 
 const CAT_LABEL = { router: "Sieť", smart: "Smart domácnosť", media: "TV a audio", computer: "Počítače", phone: "Mobily",
@@ -82,15 +83,17 @@ const PALETTES = {
 const WEATHER = [[0, "☀️", "Jasno"], [1, "🌤️", "Prevažne jasno"], [2, "⛅", "Polojasno"], [3, "☁️", "Zamračené"],
   [48, "🌫️", "Hmla"], [57, "🌦️", "Mrholenie"], [67, "🌧️", "Dážď"], [77, "🌨️", "Sneženie"], [82, "🌦️", "Prehánky"],
   [86, "🌨️", "Snehové prehánky"], [99, "⛈️", "Búrka"]];
-const PAGES = [["home", "Domov", "home"], ["energy", "Energia", "pie"], ["alerts", "Upozornenia", "bell"], ["network", "Sieť", "net"]];
+const PAGES = [["home", "Domov", "home"], ["cameras", "Kamery", "camera"], ["energy", "Energia", "pie"], ["alerts", "Upozornenia", "bell"], ["network", "Sieť", "net"]];
 
 const S = {
   devices: [], meta: {}, scan: {}, demo: false, location: null, location_name: null, home_name: null,
   controls: {}, loading: {}, lastAction: {}, expanded: new Set(),
   page: "home", filter: "all", netFilter: "all", q: "", weather: null, look: lsGet("look", {}),
   hist: lsGet("hist", []),
+  cams: { cameras: [], suggestions: [], ffmpeg: true, presets: {} }, camMode: lsGet("camMode", "live"), camForm: null, camTest: null,
 };
 let interacting = false, pendingRender = false;
+const camEls = new Map();
 
 /* ================================================================ API */
 async function api(path, body) {
@@ -551,6 +554,7 @@ function pageHome() {
         (S.scan.running ? "Hľadám zariadenia…" : "Zatiaľ nič – klikni na + a preskenuj sieť.")));
   }
   const grid = h("div", { class: "grid" });
+  if (S.filter === "all" && !q) for (const cam of S.cams.cameras.slice(0, 2)) grid.append(camTile(cam, "home"));
   for (const w of list) {
     try { grid.append(RENDER[w.kind](w)); }
     catch (e) { console.error(e); grid.append(genericWidget(w)); }
@@ -877,26 +881,27 @@ function render(force) {
   pendingRender = false;
   renderRail();
   renderHead();
-  const page = { home: pageHome, energy: pageEnergy, alerts: pageAlerts, network: pageNetwork, settings: pageSettings }[S.page] || pageHome;
-  if (S.page === "settings" && $("#page").dataset.page === "settings" && !force) return;  // neprerušovať písanie
+  const page = { home: pageHome, cameras: pageCameras, energy: pageEnergy, alerts: pageAlerts, network: pageNetwork, settings: pageSettings }[S.page] || pageHome;
+  if ((S.page === "settings" || (S.page === "cameras" && S.camForm)) && $("#page").dataset.page === S.page && !force) return;  // neprerušovať písanie
   const scrollY = window.scrollY;
   const openDetails = [...document.querySelectorAll("details.more[open]")].map(d => d.closest("[data-key]") && d.closest("[data-key]").dataset.key);
   $("#page").replaceChildren(page());
   $("#page").dataset.page = S.page;
   for (const k of openDetails) { const el = document.querySelector(`[data-key="${CSS.escape(k)}"] details.more`); if (el) el.open = true; }
   window.scrollTo(0, scrollY);
+  syncCams();
 }
 document.addEventListener("pointerup", () => { if (interacting) setTimeout(() => { if (!document.activeElement || !document.activeElement.matches("input,select")) { interacting = false; if (pendingRender) render(); } }, 50); });
 
 function go(page) {
   S.page = page;
-  const slug = { home: "", energy: "energia", alerts: "upozornenia", network: "siet", settings: "nastavenia" }[page];
+  const slug = { home: "", cameras: "kamery", energy: "energia", alerts: "upozornenia", network: "siet", settings: "nastavenia" }[page];
   history.replaceState(null, "", slug ? "#/" + slug : location.pathname);
   window.scrollTo(0, 0);
   render(true);
 }
 function fromHash() {
-  const m = { energia: "energy", upozornenia: "alerts", siet: "network", nastavenia: "settings" }[location.hash.replace(/^#\/?/, "")];
+  const m = { kamery: "cameras", energia: "energy", upozornenia: "alerts", siet: "network", nastavenia: "settings" }[location.hash.replace(/^#\/?/, "")];
   S.page = m || "home";
 }
 
@@ -928,7 +933,157 @@ setInterval(() => {
 setInterval(() => { if (S.location) loadWeather(); }, 1800000);
 setInterval(() => renderHead(), 60000);
 
+document.addEventListener("visibilitychange", syncCams);
+setInterval(loadCams, 60000);
+
 applyLook();
 fromHash();
+loadCams();
 render(true);
 loadState();
+
+/* ================================================================ kamery */
+async function loadCams() {
+  try { S.cams = await api("/api/cameras"); } catch { return; }
+  if (!interacting) render();
+}
+function camSrc(cam) { return `/cam/${cam.id}/stream.mjpg${S.camMode === "slow" ? "?slow=1" : ""}`; }
+function camTile(cam, variant) {
+  const key = cam.id + ":" + variant + ":" + S.camMode;
+  let rec = camEls.get(key);
+  if (rec) { rec.name.textContent = cam.name; return rec.el; }
+  const img = h("img", { alt: cam.name, decoding: "async" });
+  const err = h("div", { class: "cam-err", hidden: true });
+  const name = h("span", {}, cam.name);
+  const el = h("article", { class: "cam glass" + (variant === "home" ? " w2" : ""), "data-key": "cam-" + key },
+    img, err,
+    h("div", { class: "cam-top" }, h("span", { class: "cam-name" }, h("i", { class: "live" }), name),
+      h("div", { class: "cam-act" },
+        h("a", { class: "round sm", href: `/cam/${cam.id}/snapshot.jpg`, download: `${cam.name}.jpg`, title: "Uložiť snímku", onclick: e => e.stopPropagation() }, svg("download")),
+        variant !== "home" ? h("button", { class: "round sm", title: "Nastavenia kamery", onclick: e => { e.stopPropagation(); editCam(cam); } }, svg("gear")) : null,
+        h("button", { class: "round sm", title: "Na celú obrazovku", onclick: e => { e.stopPropagation(); (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el); } }, svg("expand")))));
+  if (variant === "home") el.addEventListener("click", () => go("cameras"));
+  rec = { el, img, err, name, cam, active: false, retry: null };
+  img.addEventListener("load", () => { err.hidden = true; el.classList.add("ok"); });
+  img.addEventListener("error", async () => {
+    if (!rec.active) return;
+    el.classList.remove("ok");
+    let msg = "Obraz nie je dostupný";
+    try {
+      const r = await fetch(`/cam/${cam.id}/snapshot.jpg`, { cache: "no-store" });
+      if (!r.ok) msg = (await r.json()).error || msg;
+    } catch { /* nič */ }
+    err.textContent = msg + " – skúšam znova…";
+    err.hidden = false;
+    clearTimeout(rec.retry);
+    rec.retry = setTimeout(() => { if (rec.active) img.src = camSrc(cam) + (camSrc(cam).includes("?") ? "&" : "?") + "t=" + Date.now(); }, 10000);
+  });
+  camEls.set(key, rec);
+  return el;
+}
+function syncCams() {
+  for (const [key, rec] of camEls) {
+    const want = rec.el.isConnected && !document.hidden;
+    if (want && !rec.active) { rec.active = true; rec.img.src = camSrc(rec.cam) + (camSrc(rec.cam).includes("?") ? "&" : "?") + "t=" + Date.now(); }
+    else if (!want && rec.active) { rec.active = false; clearTimeout(rec.retry); rec.img.removeAttribute("src"); rec.img.src = "data:,"; }
+    if (!rec.el.isConnected && !S.cams.cameras.some(c => c.id === rec.cam.id)) camEls.delete(key);
+  }
+}
+function editCam(cam) {
+  S.camForm = cam ? { id: cam.id, type: cam.type, name: cam.name, preset: cam.preset || "generic", ip: cam.ip || "", user: cam.user || "", password: "",
+    rtsp: (cam.custom || {}).rtsp || "", snapshot: (cam.custom || {}).snapshot || "", mjpeg: (cam.custom || {}).mjpeg || "",
+    ha_ip: cam.ha_ip, entity: cam.entity, editing: true } :
+    { type: "net", name: "", preset: "hikvision", ip: "", user: "admin", password: "", rtsp: "", snapshot: "", mjpeg: "" };
+  S.camTest = null;
+  go("cameras");
+  setTimeout(() => { const f = $(".cam-form"); if (f) f.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
+}
+function addSuggested(sg) {
+  S.camForm = sg.type === "ha" ? { type: "ha", name: sg.name, ha_ip: sg.ha_ip, entity: sg.entity } :
+    { type: "net", name: sg.name, preset: sg.preset, ip: sg.ip, user: (S.cams.presets[sg.preset] || {}).user || "admin", password: "", rtsp: "", snapshot: "", mjpeg: "" };
+  S.camTest = null;
+  render(true);
+  setTimeout(() => { const f = $(".cam-form"); if (f) f.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
+}
+async function camAction(action, extra) {
+  const F = S.camForm;
+  const btns = document.querySelectorAll(".cam-form .btn");
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await api("/api/cameras", { action, camera: F, ...(extra || {}) });
+    if (action === "test") { S.camTest = { image: r.image }; }
+    else { S.camForm = null; S.camTest = null; toast("Kamera uložená"); await loadCams(); }
+  } catch (e) {
+    S.camTest = { error: e.message };
+  }
+  render(true);
+}
+function camForm() {
+  const F = S.camForm;
+  const bind = (k, attrs) => {
+    const inp = h("input", { class: "field", value: F[k] || "", ...attrs });
+    inp.addEventListener("input", () => { F[k] = inp.value; });
+    inp.addEventListener("focus", () => { interacting = true; });
+    inp.addEventListener("blur", () => { interacting = false; });
+    return inp;
+  };
+  const lbl = (t, el, hint) => h("label", { class: "form-row" }, h("span", {}, t), el, hint ? h("small", {}, hint) : null);
+  const card = h("article", { class: "glass card cam-form w2" }, h("div", { class: "card-title" }, F.editing ? "Upraviť kameru" : "Pridať kameru"));
+  if (F.type === "ha") {
+    card.append(h("div", { class: "notice" }, `Kamera z Home Assistant: ${F.entity}`), lbl("Názov", bind("name", { maxlength: "40" })));
+  } else {
+    const sel = h("select", { class: "field" }, Object.entries(S.cams.presets).map(([k, p]) => h("option", { value: k }, p.label)));
+    sel.value = F.preset;
+    sel.addEventListener("change", () => { F.preset = sel.value; F.user = (S.cams.presets[sel.value] || {}).user || F.user; render(true); });
+    const note = (S.cams.presets[F.preset] || {}).note;
+    card.append(h("div", { class: "form-grid" },
+      lbl("Značka / typ", sel), lbl("Názov", bind("name", { maxlength: "40", placeholder: "Napr. Vchod" })),
+      F.preset !== "generic" ? lbl("IP adresa", bind("ip", { placeholder: "192.168.1.60", inputmode: "decimal" })) : null,
+      lbl("Používateľ", bind("user", { autocomplete: "off" })),
+      lbl("Heslo", bind("password", { type: "password", autocomplete: "new-password", placeholder: F.editing ? "nezmenené" : "" }))),
+    note ? h("div", { class: "notice" }, note) : "");
+    if (F.preset === "generic") {
+      card.append(lbl("RTSP adresa", bind("rtsp", { placeholder: "rtsp://192.168.1.60:554/stream1" }), "Meno a heslo môžeš zadať hore, alebo priamo v adrese."),
+        lbl("Adresa obrázka (JPEG)", bind("snapshot", { placeholder: "http://192.168.1.60/snapshot.jpg" })),
+        lbl("Adresa MJPEG videa", bind("mjpeg", { placeholder: "http://192.168.1.60/video.mjpg" })));
+    }
+  }
+  if (S.camTest && S.camTest.image) card.append(h("img", { class: "cam-preview", src: S.camTest.image, alt: "Test" }), h("div", { class: "status-chip" }, "Kamera funguje"));
+  if (S.camTest && S.camTest.error) card.append(h("div", { class: "notice err" }, "⚠ " + S.camTest.error));
+  card.append(h("div", { class: "btn-row" },
+    h("button", { class: "btn", onclick: () => camAction("test") }, svg("camera"), "Otestovať"),
+    h("button", { class: "btn primary", onclick: () => camAction("save") }, "Uložiť"),
+    S.camTest && S.camTest.error ? h("button", { class: "btn", onclick: () => camAction("save", { test: false }) }, "Uložiť aj tak") : null,
+    F.editing ? h("button", { class: "btn danger", onclick: async () => {
+      if (!confirm(`Odstrániť kameru ${F.name}?`)) return;
+      await api("/api/cameras", { action: "delete", id: F.id }); S.camForm = null; toast("Kamera odstránená"); loadCams();
+    } }, "Odstrániť") : null,
+    h("button", { class: "btn", onclick: () => { S.camForm = null; S.camTest = null; render(true); } }, "Zrušiť")));
+  return card;
+}
+function pageCameras() {
+  setDock([["live", "Živé video"], ["slow", "Úsporný režim"]], S.camMode, v => { S.camMode = v; lsSet("camMode", v); render(true); });
+  const C = S.cams;
+  const frag = h("div", {}, h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Kamery"),
+    h("p", {}, C.cameras.length ? `${C.cameras.length} ${C.cameras.length === 1 ? "kamera" : C.cameras.length < 5 ? "kamery" : "kamier"} · ${S.camMode === "slow" ? "úsporný režim (obrázok každé 2 s)" : "živé video"}` : "Zatiaľ žiadna kamera")),
+  S.camForm ? null : h("button", { class: "btn primary", onclick: () => editCam(null) }, svg("plus"), "Pridať kameru")));
+  if (!C.ffmpeg && C.cameras.some(c => c.source === "RTSP")) {
+    frag.append(h("div", { class: "glass card notice-card" }, h("b", {}, "Pre plynulé živé video nainštaluj ffmpeg"),
+      h("div", { class: "card-sub" }, "Bez neho sa RTSP kamery nedajú prehrať. Po inštalácii program reštartuj."),
+      h("pre", {}, "Mac:      brew install ffmpeg\nWindows:  winget install ffmpeg\nLinux:    sudo apt install ffmpeg")));
+  }
+  const grid = h("div", { class: "grid cam-grid" });
+  if (S.camForm) grid.append(camForm());
+  for (const cam of C.cameras) grid.append(camTile(cam, "page"));
+  frag.append(grid);
+  if (C.suggestions.length && !S.camForm) {
+    frag.append(h("div", { class: "sec" }, "Nájdené v sieti"), h("div", { class: "grid" }, C.suggestions.map(sg => h("article", { class: "glass card" },
+      h("div", { class: "card-top" }, h("div", {}, h("div", { class: "card-title" }, sg.name), h("div", { class: "card-sub" }, sg.type === "ha" ? `Home Assistant · ${sg.entity}` : `${sg.ip}${sg.vendor ? " · " + sg.vendor : ""}`)),
+        h("span", { class: "round", style: "border:0" }, svg("camera"))),
+      h("button", { class: "btn primary", onclick: () => addSuggested(sg) }, svg("plus"), "Pridať")))));
+  }
+  if (!C.cameras.length && !C.suggestions.length && !S.camForm) {
+    frag.append(h("div", { class: "glass card empty" }, "V sieti som nenašiel žiadnu kameru. Pridaj ju ručne – stačí IP adresa, meno a heslo."));
+  }
+  return frag;
+}

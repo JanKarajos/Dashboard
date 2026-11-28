@@ -74,6 +74,26 @@ Na adrese **`http://<IP počítača>:8765/tv`** je celoobrazovkové prostredie p
 - **Počasie**: spusti raz program s polohou, napríklad `python3 netdash.py --location 48.15,17.11`. Súradnice svojho mesta nájdeš na mapy.cz pravým klikom → „Co je zde?“. Poloha sa zapamätá.
 - Program musí bežať na počítači v tej istej sieti. Na nonstop použitie sa hodí Raspberry Pi.
 
+## Kamery
+
+Na stránke **Kamery** (a prvé dve aj na Domove) vidíš živý obraz z kamier. Kamery pridáš tlačidlom **Pridať kameru**. Kamery nájdené pri skene sa ponúknu samy.
+
+- **Hikvision, Dahua/Imou, Reolink, TP-Link Tapo, Ezviz, Axis, Foscam**: stačí vybrať značku a zadať IP, meno a heslo. Tlačidlo **Otestovať** ukáže obrázok z kamery.
+- **Kamery v Home Assistant** (Tuya, Xiaomi, Ring, Nest…): po zadaní HA tokenu sa ponúknu na pridanie bez hesla.
+- **Iná kamera**: zadaj RTSP adresu, adresu obrázka (JPEG) alebo MJPEG videa z návodu ku kamere.
+
+Živé video z RTSP vyžaduje bezplatný nástroj **ffmpeg** (po inštalácii program reštartuj):
+
+```bash
+brew install ffmpeg          # Mac (s Homebrew)
+winget install ffmpeg        # Windows
+sudo apt install ffmpeg      # Linux / Raspberry Pi
+```
+
+Bez ffmpeg sa ukazuje obrázok z kamery raz za sekundu, ak ho kamera podporuje (Hikvision, Dahua, Reolink, Axis, Foscam). **Úsporný režim** v lište dole posiela obrázok každé 2 sekundy, čo sa hodí na mobilné dáta. Video beží len vtedy, keď sa naň pozeráš.
+
+Heslá kamier sa ukladajú do `netdash_data.json` na tvojom počítači a do prehliadača sa neposielajú. Dashboard sa pripojí len ku kamerám v lokálnej sieti.
+
 ## Vzhľad a stránky
 
 - **Domov** – karty zariadení podľa typu:
